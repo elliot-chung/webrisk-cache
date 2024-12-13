@@ -1,0 +1,9 @@
+{
+  "dependencies": {
+    "@google-cloud/web-risk": "^4.3.0",
+    "webrisk-hash": "^2.0.3"
+  },
+  "devDependencies": {
+    "dotenv": "^16.4.7"
+  }
+}
