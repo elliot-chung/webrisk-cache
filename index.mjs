@@ -46,9 +46,12 @@ class WebriskCache {
       "unwanted" : null,
     }
 
+    this.hits = {
+      "positive" : new Map(),
+      "negative" : new Map(),
+    }
+
     this.databases = {
-      "positiveHit": new Map(),
-      "negativeHit": new Map(),
       "malware" : new Map(),
       "social" : new Map(),
       "unwanted" : new Map(),
@@ -92,13 +95,14 @@ class WebriskCache {
    */
   async check(uri) {
     const identifiedThreats = new Set()
-    const prefixHashes = getPrefixes(uri, 32)
+    const allFullHashes = getPrefixes(uri)
 
-    for (const prefix of prefixHashes) {
-      const typeString = this.hasPrefix(prefix)
-      if (allTypes.includes(typeString)) {
-        const fullHashes = getPrefixes(uri)
-        
+    for (const fullHash of allFullHashes) {
+      const typeString = this.hasHash(fullHash)
+      const fullHashString = fullHash.toString('hex')
+      
+      if (allTypes.includes(typeString)) { // Prefix was found in one of the prefix caches
+        const prefix = fullHash.subarray(0, 4)
         const request = {
           threatTypes: Object.values(ThreatTypes), // Search all types 
           hashPrefix: prefix,
@@ -110,45 +114,46 @@ class WebriskCache {
 
         for (const threat of response.threats) {
           const hash = threat.hash
-          for (const hash2 of fullHashes) {
-            if (hash.equals(hash2)) {
-              threat.threatTypes.forEach(element => identifiedThreats.add(element));
-              
-              const number = prefix.readUInt32BE(0)
-              this.databases["positiveHit"].set(number, [hash, threat.threatTypes, null])
-              this.#evictionPromise(number, threat.expireTime.seconds)
-              
-              break
-            }
+          if (hash.equals(fullHash)) { // Full hashes match, this is a positive hit
+            threat.threatTypes.forEach(element => identifiedThreats.add(element));
+            
+            this.hits["positive"].set(fullHashString, [null, threat.threatTypes])
+            this.#evictionPromise(fullHashString, threat.expireTime.seconds, "positive")
+            
+            break
           } 
         }
-      } else if (typeString === "positiveHit") {
-        const fullHashes = getPrefixes(uri)
-        const number = prefix.readUInt32BE(0)
-        const hit = this.databases["positiveHit"].get(number)
-        const hash = hit[0]
+        // Full hashes did not match, this is a negative hit
+        this.hits["negative"].set(fullHashString, [null])
+        this.#evictionPromise(fullHashString, response.negativeExpireTime.seconds, "negative")
+
+      } else if (typeString === "positive") { // Prefix was found in the positive full hash cache
+        const hit = this.hits["positive"].get(fullHashString)
         const threatTypes = hit[1]
-        for (const hash2 of fullHashes) {
-          if (hash.equals(hash2)) {
-            threatTypes.forEach(element => identifiedThreats.add(element));
-            break
-          }
-        }
-      }
+        threatTypes.forEach(element => identifiedThreats.add(element));
+      } 
     }
     return Array.from(identifiedThreats.values()) 
   }
 
   /**
-   * Check if the specified prefix is in the cache
+   * Check if the specified hash is in a cache
+   * 
    * ```
-   * const result = cache.hasPrefix(Buffer.from("a1b2c3d4", "hex"))
+   * const result = cache.hasHash(Buffer.from("a1b2c3d4", "hex"))
    * ```
-   * @param {Buffer} prefix Buffer containing 4 bytes representing the prefix
-   * @returns 
+   * @param {Buffer} hash Buffer representing the hash of a uri
+   * @returns {string} The database type that the prefix is in
    */
-  hasPrefix(prefix) {
-    const number = prefix.readUInt32BE(0)
+  hasHash(hash) {
+    const fullHashString = hash.toString('hex')
+    if (this.hits["positive"].has(fullHashString)) {
+      return "positive"
+    } else if (this.hits["negative"].has(fullHashString)) {
+      return "negative"
+    }
+
+    const number = hash.subarray(0, 4).readUInt32BE(0)
     for (const [typeString, db] of Object.entries(this.databases)) {
       if (db.has(number)) {
         return typeString
@@ -166,8 +171,11 @@ class WebriskCache {
     for (const timeoutID of Object.values(this.#updateTimeoutIDs)) {
       clearTimeout(timeoutID)
     }
-    for (const list of this.databases["positiveHit"].values()) {
-      clearTimeout(list[2])
+    for (const list of this.hits["positive"].values()) {
+      clearTimeout(list[0])
+    }
+    for (const list of this.hits["negative"].values()) {
+      clearTimeout(list[0])
     }
   }
 
@@ -209,15 +217,15 @@ class WebriskCache {
     await this.#requestSingleDiff(typeString)
   }
 
-  async #evictionPromise(number, epochTimeDeadline) {
+  async #evictionPromise(key, epochTimeDeadline, parity) {
     const now = Math.round(new Date().getTime() / 1000)
     const seconds = epochTimeDeadline - now
 
     await new Promise(resolve => {
       const timeoutID = setTimeout(resolve, seconds * 1000)
-      this.databases["positiveHit"].get(number)[2] = timeoutID
+      this.hits[parity].get(key)[0] = timeoutID
     }) 
-    this.databases["positiveHit"].delete(number)
+    this.hits[parity].delete(key)
   }
 
   /**
@@ -267,7 +275,7 @@ class WebriskCache {
         const prefixSize = raw.prefixSize
 
         for (let i = 0; i < buffer.length; i+= prefixSize) {
-          const prefix = buffer.slice(i, i+prefixSize)
+          const prefix = buffer.subarray(i, i+prefixSize)
           const number = prefix.readUInt32BE(0)
           this.databases[typeString].set(number, prefix)
         }
@@ -331,8 +339,12 @@ class WebriskCache {
    * Print the confirmed hits database
    */
   printHits() {
-    console.log("HITS:");
-    for (const [key, value] of this.databases["positiveHit"].entries()) {
+    console.log("POSITIVE HITS:");
+    for (const [key, value] of this.hits["positive"].entries()) {
+      console.log(key, value);
+    }
+    console.log("NEGATIVE HITS:");
+    for (const [key, value] of this.hits["negative"].entries()) {
       console.log(key, value);
     }
   }
