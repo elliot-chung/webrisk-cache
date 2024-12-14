@@ -47,17 +47,16 @@ class WebriskCache {
     }
 
     this.databases = {
+      "positiveHit": new Map(),
+      "negativeHit": new Map(),
       "malware" : new Map(),
       "social" : new Map(),
       "unwanted" : new Map(),
     }
 
-    this.hits = new Map()
-
     this.#client = new WebRiskServiceClient({
       apiKey: apiKey,
     });
-
   }
 
   #client
@@ -116,17 +115,17 @@ class WebriskCache {
               threat.threatTypes.forEach(element => identifiedThreats.add(element));
               
               const number = prefix.readUInt32BE(0)
-              this.hits.set(number, [hash, threat.threatTypes, null])
+              this.databases["positiveHit"].set(number, [hash, threat.threatTypes, null])
               this.#evictionPromise(number, threat.expireTime.seconds)
               
               break
             }
           } 
         }
-      } else if (typeString === "hit") {
+      } else if (typeString === "positiveHit") {
         const fullHashes = getPrefixes(uri)
         const number = prefix.readUInt32BE(0)
-        const hit = this.hits.get(number)
+        const hit = this.databases["positiveHit"].get(number)
         const hash = hit[0]
         const threatTypes = hit[1]
         for (const hash2 of fullHashes) {
@@ -150,9 +149,6 @@ class WebriskCache {
    */
   hasPrefix(prefix) {
     const number = prefix.readUInt32BE(0)
-    if (this.hits.has(number)) {
-      return "hit"
-    }
     for (const [typeString, db] of Object.entries(this.databases)) {
       if (db.has(number)) {
         return typeString
@@ -170,7 +166,7 @@ class WebriskCache {
     for (const timeoutID of Object.values(this.#updateTimeoutIDs)) {
       clearTimeout(timeoutID)
     }
-    for (const list of this.hits.values()) {
+    for (const list of this.databases["positiveHit"].values()) {
       clearTimeout(list[2])
     }
   }
@@ -219,9 +215,9 @@ class WebriskCache {
 
     await new Promise(resolve => {
       const timeoutID = setTimeout(resolve, seconds * 1000)
-      this.hits.get(number)[2] = timeoutID
+      this.databases["positiveHit"].get(number)[2] = timeoutID
     }) 
-    this.hits.delete(number)
+    this.databases["positiveHit"].delete(number)
   }
 
   /**
@@ -336,7 +332,7 @@ class WebriskCache {
    */
   printHits() {
     console.log("HITS:");
-    for (const [key, value] of this.hits.entries()) {
+    for (const [key, value] of this.databases["positiveHit"].entries()) {
       console.log(key, value);
     }
   }
