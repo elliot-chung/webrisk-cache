@@ -5,5 +5,28 @@
   },
   "devDependencies": {
     "dotenv": "^16.4.7"
-  }
+  },
+  "name": "webrisk-cache",
+  "version": "1.0.0",
+  "description": "A NodeJS implementation of Google's Webrisk Update API cache",
+  "main": "index.mjs",
+  "scripts": {
+    "test": "node cli.cjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/elliot-chung/webrisk-cache.git#main"
+  },
+  "keywords": [
+    "webrisk",
+    "google",
+    "cache",
+    "safebrowsing"
+  ],
+  "author": "Elliot Chung",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/elliot-chung/webrisk-cache/issues"
+  },
+  "homepage": "https://github.com/elliot-chung/webrisk-cache/tree/main#readme"
 }
