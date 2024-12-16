@@ -153,9 +153,9 @@ class WebriskCache {
       return "negative"
     }
 
-    const number = hash.subarray(0, 4).readUInt32BE(0)
+    const prefixString = hash.subarray(0, 4).toString('hex')
     for (const [typeString, db] of Object.entries(this.databases)) {
-      if (db.has(number)) {
+      if (db.has(prefixString)) {
         return typeString
       }
     }
@@ -212,6 +212,7 @@ class WebriskCache {
 
     await new Promise(resolve => {
       const timeoutID = setTimeout(resolve, seconds * 1000)
+      if (this.#updateTimeoutIDs[typeString]) clearTimeout(this.#updateTimeoutIDs[typeString])
       this.#updateTimeoutIDs[typeString] = timeoutID
     })
     await this.#requestSingleDiff(typeString)
@@ -234,18 +235,17 @@ class WebriskCache {
    * @param { string } typeString The string corresponding to the type of threat 
    */
   #updateDB(response, typeString) {
+    const additions = response.additions
+    const removals = response.removals
     if (response.responseType === "DIFF") {
-      const additions = response.additions
-      const removals = response.removals
-
       this.#removeFromDB(typeString, removals)
       this.#addToDB(typeString, additions)
 
-      this.databases[typeString] = new Map([...this.databases[typeString].entries()].sort((a, b) => a[0] - b[0]))    
+      this.databases[typeString] = new Map([...this.databases[typeString].entries()].sort())    
     } else if (response.responseType === "RESET") {
       this.databases[typeString].clear()
 
-      this.#addToDB(typeString, response.additions)
+      this.#addToDB(typeString, additions)
     }
     this.tokens[typeString] = response.newVersionToken
   }
@@ -276,8 +276,8 @@ class WebriskCache {
 
         for (let i = 0; i < buffer.length; i+= prefixSize) {
           const prefix = buffer.subarray(i, i+prefixSize)
-          const number = prefix.readUInt32BE(0)
-          this.databases[typeString].set(number, prefix)
+          const prefixString = prefix.toString('hex')
+          this.databases[typeString].set(prefixString, prefix)
         }
       }
       console.log("Complete!")
