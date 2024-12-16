@@ -18,8 +18,13 @@ cache.close()
 - The first diff must be requested by the user since this first call can take a significant amount of time (As the name implies, these are diffs so subsequent calls should take less time)
 - Since this is based on a REST API, the module does not hold open any network connections. The purpose of `cache.close()` is to stop the timers that control update/eviction timing. Otherwise, the cache would never fully leave scope and program will not end. 
 
-## Cache Invalidation
-Response from calls to Google's API return reccomended lifetimes for all the data held in cache. This module automatically updates its databases and evicts old items according to these recommendations from Google. 
+## TODO
+- Negative caches hits only need to use prefix while positive needs to use full (https://cloud.google.com/web-risk/docs/caching)
+- Remove eviction promise (just store expiration timestamp and check if it's expired when you get a hit)
+- Response from hashes.search should update BOTH positive and negative caches
+- Hash prefixes are not always 4 bytes, need support for other sizes (https://cloud.google.com/web-risk/docs/local-databases)
+- Must implement minimum wait duration (https://cloud.google.com/web-risk/docs/request-frequency)
+- Must implement back-off mode (https://cloud.google.com/web-risk/sla?hl=en)
 
 ## Implementation Details
 The implementation follows closely with the details outlined by Google in their documentation [here](https://cloud.google.com/web-risk/docs/update-api)
