@@ -104,8 +104,8 @@ async function test(tokens) {
   }
   const prefix = tokens[1]
   const buf = Buffer.from(prefix, "hex")
-  const res = cache.hasHash(buf)
-  console.log("Found in DB: " + res)
+  const res = cache.findHash(buf)
+  console.log("Found in DB: " + res[0])
 }
 
 async function debug(tokens) {
