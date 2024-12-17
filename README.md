@@ -16,7 +16,7 @@ cache.close()
 ```
 - This module requires an API key from Google to use the Webrisk Update API
 - The first diff must be requested by the user since this first call can take a significant amount of time (As the name implies, these are diffs so subsequent calls should take less time)
-- Since this is based on a REST API, the module does not hold open any network connections. The purpose of `cache.close()` is to stop the timers that control update/eviction timing. Otherwise, the cache would never fully leave scope and program will not end. 
+- Since this is based on a REST API, the module does not hold open any network connections. The purpose of `cache.close()` is to stop the timers that control database synchronization timing. Otherwise, the cache would never fully leave scope and program will not end. 
 
 ## TODO
 - ~~Negative caches hits only need to use prefix while positive needs to use full (https://cloud.google.com/web-risk/docs/caching)~~
