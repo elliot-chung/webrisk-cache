@@ -125,6 +125,8 @@ async function debug(tokens) {
       cache.printUnwantedDB()
     else if (tokens[1] === "hits")
       cache.printHits()
+    else if (tokens[1] === "sizes")
+      cache.printPrefixSizes()
     else
       console.error("Invalid command")
   }

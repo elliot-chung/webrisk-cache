@@ -52,9 +52,15 @@ class WebriskCache {
     }
 
     this.databases = {
-      "malware" : new Map(),
-      "social" : new Map(),
-      "unwanted" : new Map(),
+      "malware" : new Set(),
+      "social" : new Set(),
+      "unwanted" : new Set(),
+    }
+
+    this.prefixSizes = {
+      "malware" : new Set(), 
+      "social" : new Set(),
+      "unwanted" : new Set(),
     }
 
     this.#client = new WebRiskServiceClient({
@@ -99,11 +105,11 @@ class WebriskCache {
     const allFullHashes = isHash ? [Buffer.from(uri, 'hex')] : getPrefixes(uri)
 
     for (const fullHash of allFullHashes) {
-      const typeString = this.hasHash(fullHash)
+      const [typeString, prefixSize] = this.hasHash(fullHash)
       const fullHashString = fullHash.toString('hex')
       
       if (allTypes.includes(typeString)) { // Prefix was found in one of the prefix caches
-        const prefix = fullHash.subarray(0, 4)
+        const prefix = fullHash.subarray(0, prefixSize)
         const prefixString = prefix.toString('hex')
         const request = {
           threatTypes: Object.values(ThreatTypes), // Search all types 
@@ -113,8 +119,6 @@ class WebriskCache {
         process.stdout.write("$$$$ network call...")
         const response = (await this.#client.searchHashes(request))[0]
         console.log("Complete!")
-
-        console.log(response)
 
         for (const threat of response.threats) {
           const hash = threat.hash
@@ -145,33 +149,42 @@ class WebriskCache {
    * const result = cache.hasHash(Buffer.from("a1b2c3d4", "hex"))
    * ```
    * @param {Buffer} hash Buffer representing the hash of a uri
-   * @returns {string} The database type that the prefix is in
+   * @returns {[string, number]} The database type that the prefix is in and the prefix size
    */
   hasHash(hash) {
-    const prefixString = hash.subarray(0, 4).toString('hex')
+    const fullSet = new Set([...this.prefixSizes["malware"], ...this.prefixSizes["social"], ...this.prefixSizes["unwanted"]])
+    const sortedOrder = Array.from(fullSet).sort((a, b) => b - a)
+    const prefixStrings = sortedOrder.map(x => hash.subarray(0, x).toString('hex'))
+
     const fullHashString = hash.toString('hex')
     if (this.hits["positive"].has(fullHashString)) {
       const [expireTime, _] = this.hits["positive"].get(fullHashString)
       if (expireTime * 1000 < Date.now()) {
         this.hits["positive"].delete(fullHashString)
       } else {
-        return "positive"
+        return ["positive", 32]
       }
-    } else if (this.hits["negative"].has(prefixString)) {
-      const [expireTime, _] = this.hits["negative"].get(prefixString)
-      if (expireTime * 1000 < Date.now()) {
-        this.hits["negative"].delete(prefixString)
-      } else {
-        return "negative"
+    } else { 
+      for (const prefixString of prefixStrings) {
+        if (this.hits["negative"].has(prefixString)) {
+          const [expireTime, _] = this.hits["negative"].get(prefixString)
+          if (expireTime * 1000 < Date.now()) {
+            this.hits["negative"].delete(prefixString)
+          } else {
+            return ["negative", prefixString.length / 2]
+          }
+        }
       }
     }
 
     for (const [typeString, db] of Object.entries(this.databases)) {
-      if (db.has(prefixString)) {
-        return typeString
+      for (const prefixString of prefixStrings) {
+        if (db.has(prefixString)) {
+          return [typeString, prefixString.length / 2]
+        }
       }
     }
-    return "none"
+    return ["none", 0]
   }
 
   /**
@@ -199,8 +212,6 @@ class WebriskCache {
     process.stdout.write("Free network call...")
     const response = (await this.#client.computeThreatListDiff(request))[0];
     console.log("Complete!")
-
-    console.log(response)
 
     this.#updateDB(response, typeString)
 
@@ -238,9 +249,10 @@ class WebriskCache {
       this.#removeFromDB(typeString, removals)
       this.#addToDB(typeString, additions)
 
-      this.databases[typeString] = new Map([...this.databases[typeString].entries()].sort())    
+      this.databases[typeString] = new Set([...this.databases[typeString].keys()].sort())    
     } else if (response.responseType === "RESET") {
       this.databases[typeString].clear()
+      this.prefixSizes[typeString].clear()
 
       this.#addToDB(typeString, additions)
     }
@@ -270,11 +282,12 @@ class WebriskCache {
       for (const raw of additions.rawHashes) {
         const buffer = raw.rawHashes
         const prefixSize = raw.prefixSize
+        this.prefixSizes[typeString].add(prefixSize)
 
         for (let i = 0; i < buffer.length; i+= prefixSize) {
           const prefix = buffer.subarray(i, i+prefixSize)
           const prefixString = prefix.toString('hex')
-          this.databases[typeString].set(prefixString, prefix)
+          this.databases[typeString].add(prefixString)
         }
       }
       console.log("Complete!")
@@ -283,8 +296,12 @@ class WebriskCache {
 
   #validate(typeString, hashBuffer) {
     const db = this.databases[typeString]
-    const d = db.values()
-    const b = Buffer.concat([...d])
+    const d = db.keys()
+    let data = ""
+    for (let v = d.next(); !v.done; v = d.next()) {
+       data += v.value
+    }
+    const b = Buffer.from(data, 'hex')
 
     const hash = crypto.createHash('sha256').update(b).digest('hex'); // Local DB Hash
     const hash2 = hashBuffer.toString('hex'); // API Hash
@@ -342,6 +359,13 @@ class WebriskCache {
     }
     console.log("NEGATIVE HITS:");
     for (const [key, value] of this.hits["negative"].entries()) {
+      console.log(key, value);
+    }
+  }
+
+  printPrefixSizes() {
+    console.log("PREFIX SIZES:");
+    for (const [key, value] of Object.entries(this.prefixSizes)) {
       console.log(key, value);
     }
   }
