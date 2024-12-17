@@ -91,7 +91,8 @@ async function check(tokens) {
   }
   
   const uri = tokens[1]
-  const result = await cache.check(uri)
+  const isHash = tokens[2] === "true"
+  const result = await cache.check(uri, isHash)
 
   console.log("Identified Threats: " + result)
 }

@@ -19,9 +19,9 @@ cache.close()
 - Since this is based on a REST API, the module does not hold open any network connections. The purpose of `cache.close()` is to stop the timers that control update/eviction timing. Otherwise, the cache would never fully leave scope and program will not end. 
 
 ## TODO
-- Negative caches hits only need to use prefix while positive needs to use full (https://cloud.google.com/web-risk/docs/caching)
-- Remove eviction promise (just store expiration timestamp and check if it's expired when you get a hit)
-- Response from hashes.search should update BOTH positive and negative caches
+- ~~Negative caches hits only need to use prefix while positive needs to use full (https://cloud.google.com/web-risk/docs/caching)~~
+- ~~Remove eviction promise (just store expiration timestamp and check if it's expired when you get a hit)~~
+- ~~Response from hashes.search should update BOTH positive and negative caches~~
 - Hash prefixes are not always 4 bytes, need support for other sizes (https://cloud.google.com/web-risk/docs/local-databases)
 - Must implement minimum wait duration (https://cloud.google.com/web-risk/docs/request-frequency)
 - Must implement back-off mode (https://cloud.google.com/web-risk/sla?hl=en)

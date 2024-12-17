@@ -90,12 +90,13 @@ class WebriskCache {
    * If it is, this function will complete a call to the WebRisk API to verify the threat by comparing the full length hashes.
    * The returned array will contain the threat types that match the URI.
    * It will be empty if the URI is safe. 
-   * @param {string} uri The URI to check
+   * @param {string} uri The URI or hash to check
+   * @param {boolean} [isHash=false] Whether the URI is a hash or not
    * @returns {string[]} An array of threat types: ["MALWARE", "SOCIAL_ENGINEERING", "UNWANTED_SOFTWARE"]
    */
-  async check(uri) {
+  async check(uri, isHash=false) {
     const identifiedThreats = new Set()
-    const allFullHashes = getPrefixes(uri)
+    const allFullHashes = isHash ? [Buffer.from(uri, 'hex')] : getPrefixes(uri)
 
     for (const fullHash of allFullHashes) {
       const typeString = this.hasHash(fullHash)
@@ -103,6 +104,7 @@ class WebriskCache {
       
       if (allTypes.includes(typeString)) { // Prefix was found in one of the prefix caches
         const prefix = fullHash.subarray(0, 4)
+        const prefixString = prefix.toString('hex')
         const request = {
           threatTypes: Object.values(ThreatTypes), // Search all types 
           hashPrefix: prefix,
@@ -112,20 +114,20 @@ class WebriskCache {
         const response = (await this.#client.searchHashes(request))[0]
         console.log("Complete!")
 
+        console.log(response)
+
         for (const threat of response.threats) {
           const hash = threat.hash
+          const hashString = hash.toString('hex')
+          this.hits["positive"].set(hashString, [threat.expireTime.seconds, threat.threatTypes])
           if (hash.equals(fullHash)) { // Full hashes match, this is a positive hit
             threat.threatTypes.forEach(element => identifiedThreats.add(element));
-            
-            this.hits["positive"].set(fullHashString, [null, threat.threatTypes])
-            this.#evictionPromise(fullHashString, threat.expireTime.seconds, "positive")
             
             break
           } 
         }
-        // Full hashes did not match, this is a negative hit
-        this.hits["negative"].set(fullHashString, [null])
-        this.#evictionPromise(fullHashString, response.negativeExpireTime.seconds, "negative")
+
+        this.hits["negative"].set(prefixString, [response.negativeExpireTime.seconds])
 
       } else if (typeString === "positive") { // Prefix was found in the positive full hash cache
         const hit = this.hits["positive"].get(fullHashString)
@@ -146,14 +148,24 @@ class WebriskCache {
    * @returns {string} The database type that the prefix is in
    */
   hasHash(hash) {
+    const prefixString = hash.subarray(0, 4).toString('hex')
     const fullHashString = hash.toString('hex')
     if (this.hits["positive"].has(fullHashString)) {
-      return "positive"
-    } else if (this.hits["negative"].has(fullHashString)) {
-      return "negative"
+      const [expireTime, _] = this.hits["positive"].get(fullHashString)
+      if (expireTime * 1000 < Date.now()) {
+        this.hits["positive"].delete(fullHashString)
+      } else {
+        return "positive"
+      }
+    } else if (this.hits["negative"].has(prefixString)) {
+      const [expireTime, _] = this.hits["negative"].get(prefixString)
+      if (expireTime * 1000 < Date.now()) {
+        this.hits["negative"].delete(prefixString)
+      } else {
+        return "negative"
+      }
     }
 
-    const prefixString = hash.subarray(0, 4).toString('hex')
     for (const [typeString, db] of Object.entries(this.databases)) {
       if (db.has(prefixString)) {
         return typeString
@@ -171,12 +183,6 @@ class WebriskCache {
     for (const timeoutID of Object.values(this.#updateTimeoutIDs)) {
       clearTimeout(timeoutID)
     }
-    for (const list of this.hits["positive"].values()) {
-      clearTimeout(list[0])
-    }
-    for (const list of this.hits["negative"].values()) {
-      clearTimeout(list[0])
-    }
   }
 
   async #requestSingleDiff(typeString, constraint= {}, reset=false) {
@@ -193,6 +199,8 @@ class WebriskCache {
     process.stdout.write("Free network call...")
     const response = (await this.#client.computeThreatListDiff(request))[0];
     console.log("Complete!")
+
+    console.log(response)
 
     this.#updateDB(response, typeString)
 
@@ -216,17 +224,6 @@ class WebriskCache {
       this.#updateTimeoutIDs[typeString] = timeoutID
     })
     await this.#requestSingleDiff(typeString)
-  }
-
-  async #evictionPromise(key, epochTimeDeadline, parity) {
-    const now = Math.round(new Date().getTime() / 1000)
-    const seconds = epochTimeDeadline - now
-
-    await new Promise(resolve => {
-      const timeoutID = setTimeout(resolve, seconds * 1000)
-      this.hits[parity].get(key)[0] = timeoutID
-    }) 
-    this.hits[parity].delete(key)
   }
 
   /**
