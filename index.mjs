@@ -105,7 +105,7 @@ class WebriskCache {
     const allFullHashes = isHash ? [Buffer.from(uri, 'hex')] : getPrefixes(uri)
 
     for (const fullHash of allFullHashes) {
-      const [typeString, prefixSize] = this.hasHash(fullHash)
+      const [typeString, prefixSize] = this.findHash(fullHash)
       const fullHashString = fullHash.toString('hex')
       
       if (allTypes.includes(typeString)) { // Prefix was found in one of the prefix caches
@@ -151,9 +151,9 @@ class WebriskCache {
    * @param {Buffer} hash Buffer representing the hash of a uri
    * @returns {[string, number]} The database type that the prefix is in and the prefix size
    */
-  hasHash(hash) {
+  findHash(hash) {
     const fullSet = new Set([...this.prefixSizes["malware"], ...this.prefixSizes["social"], ...this.prefixSizes["unwanted"]])
-    const sortedOrder = Array.from(fullSet).sort((a, b) => b - a)
+    const sortedOrder = Array.from(fullSet).sort((a, b) => a - b)
     const prefixStrings = sortedOrder.map(x => hash.subarray(0, x).toString('hex'))
 
     const fullHashString = hash.toString('hex')
@@ -322,30 +322,48 @@ class WebriskCache {
   /**
    * Print the malware database
    */
-  printMalwareDB() {
+  printMalwareDB(maxNumber=10) {
+    const nLeft = this.databases["malware"].size - maxNumber
     console.log("MALWARE DB:");
-    for (const [key, value] of this.databases["malware"].entries()) {
-      console.log(key, value);
+    for (const value of this.databases["malware"].values()) {
+      console.log(value);
+      maxNumber--
+      if (maxNumber === 0) {
+        if (nLeft > 0) console.log(`...and ${nLeft} more`)
+        break
+      }
     }
   }
 
   /**
    * Print the social engineering database
    */
-  printSocialDB() {
+  printSocialDB(maxNumber=10) {
+    const nLeft = this.databases["social"].size - maxNumber
     console.log("SOCIAL DB:");
-    for (const [key, value] of this.databases["social"].entries()) {
-      console.log(key, value);
+    for (const value of this.databases["social"].values()) {
+      console.log(value);
+      maxNumber--
+      if (maxNumber === 0) {
+        if (nLeft > 0) console.log(`...and ${nLeft} more`)
+        break
+      }
     }
   }
 
   /**
    * Print the unwanted software database
    */
-  printUnwantedDB() {
+  printUnwantedDB(maxNumber=10) {
+    const nLeft = this.databases["unwanted"].size - maxNumber
     console.log("UNWANTED DB:");
-    for (const [key, value] of this.databases["unwanted"].entries()) {
-      console.log(key, value);
+    for (const value of this.databases["unwanted"].values()) {
+      console.log(value);
+      maxNumber--
+      if (maxNumber === 0) {
+        if (nLeft > 0) console.log(`...and ${nLeft} more`)
+        break
+      }
     }
   }
 
