@@ -24,7 +24,8 @@ cache.close()
 - ~~Response from hashes.search should update BOTH positive and negative caches~~
 - ~~Hash prefixes are not always 4 bytes, need support for other sizes (https://cloud.google.com/web-risk/docs/local-databases)~~
 - Must implement minimum wait duration (https://cloud.google.com/web-risk/docs/request-frequency)
-- Must implement back-off mode (https://cloud.google.com/web-risk/sla?hl=en)
+- ~~Must implement back-off mode (https://cloud.google.com/web-risk/sla?hl=en)~~
+- Decide what to do if confirmation server is unavailable
 
 ## Implementation Details
 The implementation follows closely with the details outlined by Google in their documentation [here](https://cloud.google.com/web-risk/docs/update-api)

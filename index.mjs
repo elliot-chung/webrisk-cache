@@ -115,10 +115,14 @@ class WebriskCache {
           threatTypes: Object.values(ThreatTypes), // Search all types 
           hashPrefix: prefix,
         }
-        
-        process.stdout.write("$$$$ network call...")
-        const response = (await this.#client.searchHashes(request))[0]
-        console.log("Complete!")
+
+        let response 
+        try {
+          response = (await this.#exponentialBackoff(() => this.#client.searchHashes(request)))[0]
+        } catch (error) { // All retries failed, server is unavailable
+          // TODO: Decide what do if confirmation server is unavailable
+
+        }
 
         for (const threat of response.threats) {
           const hash = threat.hash
@@ -130,8 +134,8 @@ class WebriskCache {
             break
           } 
         }
-
-        this.hits["negative"].set(prefixString, [response.negativeExpireTime.seconds])
+        if (response.negativeExpireTime)
+          this.hits["negative"].set(prefixString, [response.negativeExpireTime.seconds])
 
       } else if (typeString === "positive") { // Prefix was found in the positive full hash cache
         const hit = this.hits["positive"].get(fullHashString)
@@ -198,6 +202,42 @@ class WebriskCache {
     }
   }
 
+  async #simpleRetry(call, maxRetries=2, retryDelaySeconds=30) {
+    let retries = 0
+    process.stdout.write("Making network call...")
+    while (retries < maxRetries) {
+      try {
+        const response = await call()
+        console.log("Complete!")
+        return response
+      } catch (error) {
+        retries++
+        await new Promise(resolve => setTimeout(resolve, retryDelaySeconds * 1000))
+      }
+    }
+    console.log("Failed!")
+    throw new Error("Failed to make network call after " + maxRetries + " retries")
+  }
+
+  async #exponentialBackoff(call, startDelaySeconds=1, maxDelaySeconds=32, maxRetries=10) {
+    let delaySeconds = startDelaySeconds
+    let retries = 0
+    process.stdout.write("Making network call...")
+    while (retries < maxRetries) {
+      try {
+        const response = await call()
+        console.log("Complete!")
+        return response
+      } catch (error) {
+        retries++
+        delaySeconds = Math.min(delaySeconds * 2, maxDelaySeconds)
+        await new Promise(resolve => setTimeout(resolve, delaySeconds * 1000))
+      }
+    }
+    console.log("Failed!")
+    throw new Error("Failed to make network call after " + maxRetries + " retries")
+  }
+  
   async #requestSingleDiff(typeString, constraint= {}, reset=false) {
     const c =
       protos.google.cloud.webrisk.v1.ComputeThreatListDiffRequest.Constraints.create(
@@ -209,9 +249,15 @@ class WebriskCache {
       threatType: ThreatTypes[typeString],
     };
 
-    process.stdout.write("Free network call...")
-    const response = (await this.#client.computeThreatListDiff(request))[0];
-    console.log("Complete!")
+
+    let response
+    try {
+      response = (await this.#simpleRetry(() => this.#client.computeThreatListDiff(request)))[0];
+    } catch (error) { // All retries failed, server is unavailable
+      // Try again much later 
+      this.#diffPromise(typeString, 900) // Try again in 15 minutes
+      return
+    }
 
     this.#updateDB(response, typeString)
 
